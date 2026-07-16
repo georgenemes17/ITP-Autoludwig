@@ -1,79 +1,51 @@
 import streamlit as st
 import pandas as pd
 import datetime
+import requests
+import json
 
-# --- CONFIGURARE GOOGLE SHEETS ---
-# Extragem ID-ul tabelului direct din link-ul tău
-SPREADSHEET_ID = "1GIP7mw5uh-HIt0sTExN7d2YjmG4UEeayvnPsTODnVlQ"
-# Link-ul special prin care Streamlit citește datele ca CSV
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid=0"
-# Link-ul folosit pentru a trimite (scrie) datele în Google Sheets prin formular web
-FORM_URL = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/values/A1:append?valueInputOption=USER_ENTERED"
+# --- CONFIGURARE GOOGLE WEB APP ---
+# Pune între ghilimele link-ul tău complet copiat la Pasul 2 (cel cu /exec la sfârșit):
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzH4dn0ui_gFT4ygni-I72YWeom363jhndmtJp8IlCc34-8Wa8IIu1K_xzhwpgv9g0Q/exec"
 
-# Funcție pentru a încărca programările din Google Sheets
+# Funcție pentru a încărca programările direct din Web App
 def incarca_programari():
     try:
-        # Citim direct din Google Sheets prin link-ul CSV public
-        df = pd.read_csv(CSV_URL)
-        coloane_necesare = ["Data", "Ora", "Nume", "Telefon", "Marca", "Model", "Nr_Masina"]
-        # Ne asigurăm că avem structura corectă
-        for col in coloane_necesare:
-            if col not in df.columns:
-                df[col] = ""
-        return df[coloane_necesare]
-    except Exception as e:
-        # Dacă tabelul este gol sau apare o eroare, returnăm un tabel gol
-        return pd.DataFrame(columns=["Data", "Ora", "Nume", "Telefon", "Marca", "Model", "Nr_Masina"])
+        raspuns = requests.get(WEB_APP_URL, timeout=10)
+        if raspuns.status_code == 200:
+            date_json = raspuns.json()
+            df = pd.DataFrame(date_json)
+            coloane_necesare = ["Data", "Ora", "Nume", "Telefon", "Marca", "Model", "Nr_Masina"]
+           
+            if df.empty:
+                return pd.DataFrame(columns=coloane_necesare)
+               
+            for col in coloane_necesare:
+                if col not in df.columns:
+                    df[col] = ""
+            return df[coloane_necesare]
+    except Exception:
+        pass
+    return pd.DataFrame(columns=["Data", "Ora", "Nume", "Telefon", "Marca", "Model", "Nr_Masina"])
 
-# Funcție pentru a salva o programare nouă în Google Sheets
+# Funcție pentru a salva o programare nouă prin Web App
 def salveaza_programare(data, ora, nume, telefon, marca, model, nr_masina):
+    date_programare = {
+        "Data": str(data),
+        "Ora": ora,
+        "Nume": nume,
+        "Telefon": telefon,
+        "Marca": marca,
+        "Model": model,
+        "Nr_Masina": nr_masina
+    }
     try:
-        # Folosim conexiunea nativă Streamlit pentru Google Sheets
-        from streamlit_gsheets import GSheetsConnection
-        conn = st.connection("gsheets", type=GSheetsConnection)
-       
-        # Citim datele actuale
-        df_actual = conn.read(spreadsheet=f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit")
-       
-        # Cream rândul nou
-        noua_programare = pd.DataFrame([{
-            "Data": str(data),
-            "Ora": ora,
-            "Nume": nume,
-            "Telefon": telefon,
-            "Marca": marca,
-            "Model": model,
-            "Nr_Masina": nr_masina
-        }])
-       
-        # Combinăm datele vechi cu cele noi
-        df_final = pd.concat([df_actual, noua_programare], ignore_index=True)
-       
-        # Salvăm înapoi în Google Sheets
-        conn.update(spreadsheet=f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit", data=df_final)
-        return True
+        raspuns = requests.post(WEB_APP_URL, data=json.dumps(date_programare), headers={"Content-Type": "application/json"}, timeout=10)
+        if raspuns.status_code == 200:
+            return True
     except Exception as e:
-        st.error(f"Eroare la salvarea în Google Sheets: {e}")
-        return False
-
-# Funcție pentru a șterge o programare din Google Sheets
-def sterge_programare_din_sheet(index_de_sters):
-    try:
-        from streamlit_gsheets import GSheetsConnection
-        conn = st.connection("gsheets", type=GSheetsConnection)
-       
-        # Citim datele actuale
-        df_actual = conn.read(spreadsheet=f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit")
-       
-        # Ștergem rândul dorit
-        df_final = df_actual.drop(index_de_sters)
-       
-        # Rescriem tabelul actualizat în Google Sheets
-        conn.update(spreadsheet=f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit", data=df_final)
-        return True
-    except Exception as e:
-        st.error(f"Eroare la ștergerea din Google Sheets: {e}")
-        return False
+        st.error(f"Eroare la trimiterea datelor către Google Sheets: {e}")
+    return False
 
 # Configurare pagină Streamlit
 st.set_page_config(
@@ -253,7 +225,7 @@ elif optiune == "Panou Administrare (Doar pt. Firmă)":
         st.subheader("📋 Toate programările înregistrate în sistem")
         df_actual = incarca_programari()
        
-        if df_actual.empty or len(df_actual) == 0 or (len(df_actual) == 1 and df_actual.iloc[0].isnull().all()):
+        if df_actual.empty or len(df_actual) == 0:
             st.info("Nu există nicio programare înregistrată încă în Google Sheets.")
         else:
             # Sortare automată cronologică
@@ -269,30 +241,5 @@ elif optiune == "Panou Administrare (Doar pt. Firmă)":
                 file_name=f"programari_AUTOLUDWIG_{datetime.date.today()}.csv",
                 mime="text/csv",
             )
-           
-            st.markdown("<hr style='border: 1px solid #fec107;'>", unsafe_allow_html=True)
-           
-            # SECȚIUNE ȘTERGERE PROGRAMARE
-            st.subheader("❌ Șterge o programare existentă")
-            st.write("Alege programarea pe care dorești să o anulezi din lista de mai jos:")
-           
-            # Construim lista de opțiuni lizibile
-            optiuni_stergere = []
-            for idx, row in df_actual.iterrows():
-                optiuni_stergere.append(f"{row['Data']} | {row['Ora']} | {row['Nume']} | {row['Nr_Masina']}")
-           
-            programare_selectata = st.selectbox("Selectează programarea:", optiuni_stergere)
-           
-            buton_sterge = st.button("ȘTERGE PROGRAMAREA SELECTATĂ")
-           
-            if buton_sterge:
-                index_optiune = optiuni_stergere.index(programare_selectata)
-                index_original = df_actual.index[index_optiune]
-               
-                sters_cu_succes = sterge_programare_din_sheet(index_original)
-                if sters_cu_succes:
-                    st.success("Programarea a fost ștearsă cu succes din Google Sheets!")
-                    st.rerun()
-               
     elif parola != "":
-        st.error("Parolă incorectă!") 
+        st.error("Parolă incorectă!")
