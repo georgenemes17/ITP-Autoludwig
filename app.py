@@ -5,8 +5,8 @@ import requests
 import json
 
 # --- CONFIGURARE GOOGLE WEB APP ---
-# Pune între ghilimele link-ul tău complet copiat la Pasul 2 (cel cu /exec la sfârșit):
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzH4dn0ui_gFT4ygni-I72YWeom363jhndmtJp8IlCc34-8Wa8IIu1K_xzhwpgv9g0Q/exec"
+# Pune între ghilimele link-ul tău complet (cel care se termină în /exec):
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxfAgNJgwMpd51r0aaPCHhFiw1CdKL_OHhQYoj3yFM2lJrX34UpqcSC5079iH9Bqe6b/exec"
 
 # Funcție pentru a încărca programările direct din Web App
 def incarca_programari():
@@ -92,6 +92,15 @@ st.markdown("""
         margin-bottom: 15px;
     }
    
+    /* Sub-subtitluri galbene pentru vizualizare programări */
+    .subtitlu-galben {
+        color: #fec107 !important;
+        font-weight: bold !important;
+        font-size: 1.2rem !important;
+        margin-top: 20px;
+        margin-bottom: 10px;
+    }
+   
     /* Etichetele câmpurilor din formular */
     label {
         color: #fec107 !important;
@@ -142,6 +151,17 @@ st.markdown("""
     [data-testid="stSidebar"] * {
         color: #ffffff !important;
     }
+   
+    /* Listare programări protejate clienți */
+    .programare-ocupata {
+        background-color: #172a45;
+        border: 1px solid #0d6efd;
+        border-left: 5px solid #fec107;
+        padding: 8px 12px;
+        margin-bottom: 5px;
+        border-radius: 4px;
+        font-weight: bold;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -172,9 +192,11 @@ if optiune == "Fă o programare":
    
     df_actual = incarca_programari()
    
-    # Verificăm dacă avem deja programări pentru data respectivă
+    # Filtrăm programările pentru ziua selectată
+    df_zi_selectata = pd.DataFrame()
     if not df_actual.empty:
-        ore_ocupate_in_zi = df_actual[df_actual["Data"] == str(data_selectata)]["Ora"].tolist()
+        df_zi_selectata = df_actual[df_actual["Data"] == str(data_selectata)]
+        ore_ocupate_in_zi = df_zi_selectata["Ora"].tolist()
     else:
         ore_ocupate_in_zi = []
        
@@ -207,6 +229,25 @@ if optiune == "Fă o programare":
                     st.success(f"🎉 Programare reușită! Te așteptăm la AUTOLUDWIG SRL în data de {data_selectata} la ora {ora_aleasa}.")
                     st.balloons()
                     st.rerun()
+
+    # --- SECȚIUNE SECRETA/SECURIZATĂ PENTRU VIZUALIZAREA ORELOR DE CĂTRE CLIENȚI ---
+    st.markdown("<hr style='border: 1px solid #fec107; margin-top: 35px;'>", unsafe_allow_html=True)
+    st.markdown(f"<div class='subtitlu-galben'>📅 Programări deja ocupate în ziua de {data_selectata}:</div>", unsafe_allow_html=True)
+   
+    if not df_zi_selectata.empty and len(df_zi_selectata) > 0:
+        # Sortăm cronologic orele deja ocupate
+        df_zi_sortat = df_zi_selectata.sort_values(by="Ora")
+       
+        for idx, row in df_zi_sortat.iterrows():
+            # Afișăm DOAR Ora și Marca mașinii, ascunzând Numele, Telefonul și Nr_Masina
+            marca_masina = row['Marca'] if str(row['Marca']).strip() != "" else "Auto"
+            st.markdown(f"""
+                <div class="programare-ocupata">
+                    ⏰ {row['Ora']} — Rezervat ({marca_masina})
+                </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info("Toate orele sunt libere în această zi! Alege orice oră dorești din formularul de mai sus.")
 
 # --- PAGINA 2: PENTRU FIRMĂ ---
 elif optiune == "Panou Administrare (Doar pt. Firmă)":
