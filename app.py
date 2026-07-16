@@ -6,7 +6,7 @@ import json
 
 # --- CONFIGURARE GOOGLE WEB APP ---
 # Pune între ghilimele link-ul tău complet (cel care se termină în /exec):
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxfAgNJgwMpd51r0aaPCHhFiw1CdKL_OHhQYoj3yFM2lJrX34UpqcSC5079iH9Bqe6b/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxzSmPLcnnDbQH7_jBP15AoZci_nyYO3gPyn3AYFLcITFPYeHd61bKmduAJQFxZyQxH/exec"
 
 # Funcție pentru a încărca programările direct din Web App
 def incarca_programari():
@@ -31,6 +31,7 @@ def incarca_programari():
 # Funcție pentru a salva o programare nouă prin Web App
 def salveaza_programare(data, ora, nume, telefon, marca, model, nr_masina):
     date_programare = {
+        "action": "adauga",
         "Data": str(data),
         "Ora": ora,
         "Nume": nume,
@@ -45,6 +46,20 @@ def salveaza_programare(data, ora, nume, telefon, marca, model, nr_masina):
             return True
     except Exception as e:
         st.error(f"Eroare la trimiterea datelor către Google Sheets: {e}")
+    return False
+
+# Funcție pentru a șterge o programare prin Web App (folosind indexul rândului)
+def sterge_programare(index_rand):
+    date_stergere = {
+        "action": "sterge",
+        "index": int(index_rand)
+    }
+    try:
+        raspuns = requests.post(WEB_APP_URL, data=json.dumps(date_stergere), headers={"Content-Type": "application/json"}, timeout=10)
+        if raspuns.status_code == 200:
+            return True
+    except Exception as e:
+        st.error(f"Eroare la ștergerea programării: {e}")
     return False
 
 # Configurare pagină Streamlit
@@ -235,11 +250,8 @@ if optiune == "Fă o programare":
     st.markdown(f"<div class='subtitlu-galben'>📅 Programări deja ocupate în ziua de {data_selectata}:</div>", unsafe_allow_html=True)
    
     if not df_zi_selectata.empty and len(df_zi_selectata) > 0:
-        # Sortăm cronologic orele deja ocupate
         df_zi_sortat = df_zi_selectata.sort_values(by="Ora")
-       
         for idx, row in df_zi_sortat.iterrows():
-            # Afișăm DOAR Ora și Marca mașinii, ascunzând Numele, Telefonul și Nr_Masina
             marca_masina = row['Marca'] if str(row['Marca']).strip() != "" else "Auto"
             st.markdown(f"""
                 <div class="programare-ocupata">
@@ -282,5 +294,33 @@ elif optiune == "Panou Administrare (Doar pt. Firmă)":
                 file_name=f"programari_AUTOLUDWIG_{datetime.date.today()}.csv",
                 mime="text/csv",
             )
+           
+            st.markdown("<hr style='border: 1px solid #fec107;'>", unsafe_allow_html=True)
+           
+            # --- SECȚIUNEA REINTRODUSĂ PENTRU ȘTERGERE PROGRAMĂRI ---
+            st.subheader("❌ Șterge o programare existentă")
+            st.write("Alege programarea pe care dorești să o anulezi din lista de mai jos:")
+           
+            # Construim lista de opțiuni pentru dropdown
+            optiuni_stergere = []
+            for idx, row in df_actual.iterrows():
+                optiuni_stergere.append(f"{row['Data']} | {row['Ora']} | {row['Nume']} | {row['Nr_Masina']}")
+           
+            programare_selectata = st.selectbox("Selectează programarea:", optiuni_stergere)
+           
+            buton_sterge = st.button("ȘTERGE PROGRAMAREA SELECTATĂ")
+           
+            if buton_sterge:
+                index_optiune = optiuni_stergere.index(programare_selectata)
+                # Obținem indexul rândului (adunăm 2 deoarece în Sheets rândurile încep de la 1 și avem capul de tabel pe rândul 1)
+                index_original_sheet = df_actual.index[index_optiune] + 2
+               
+                sters_cu_succes = sterge_programare(index_original_sheet)
+                if sters_cu_succes:
+                    st.success("Programarea a fost ștearsă cu succes din Google Sheets!")
+                    st.rerun()
+                else:
+                    st.error("A apărut o problemă la ștergerea rândului din Google Sheets.")
+                   
     elif parola != "":
-        st.error("Parolă incorectă!")
+        st.error("Parolă incorectă!") 
